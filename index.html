@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Movie Night Together</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root{--bg:#0e0b14;--card:#191424;--accent:#ff4d6d;--text:#f3eefc;--muted:#9a90b3;--ok:#3ddc97}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:radial-gradient(circle at 20% 0%,#2a1740 0,var(--bg) 55%);color:var(--text);font-family:system-ui,Segoe UI,Roboto,sans-serif;min-height:100vh}
+  button{font:inherit;cursor:pointer;border:0;border-radius:12px;padding:12px 18px;background:var(--accent);color:#fff;font-weight:600;transition:.15s}
+  button:hover{filter:brightness(1.1);transform:translateY(-1px)}
+  button.ghost{background:#2a2238;color:var(--text)}
+  button.off{background:#5a2030}
+  input{font:inherit;padding:12px 14px;border-radius:12px;border:1px solid #3a2f50;background:#120e1b;color:var(--text);width:100%;text-transform:uppercase;letter-spacing:3px;text-align:center}
+  #lobby{max-width:420px;margin:12vh auto;padding:28px;background:var(--card);border-radius:20px;text-align:center;box-shadow:0 20px 60px #0008}
+  #lobby h1{font-size:28px;margin-bottom:6px}
+  #lobby p{color:var(--muted);margin-bottom:22px;font-size:14px}
+  .stack{display:grid;gap:12px}
+  .or{color:var(--muted);font-size:12px}
+  #status{margin-top:14px;font-size:13px;color:var(--muted);min-height:18px}
+  #room{display:none;height:100vh;padding:14px;gap:14px;grid-template-columns:1fr 290px}
+  #stage{position:relative;background:#000;border-radius:18px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+  #screen{width:100%;height:100%;object-fit:contain;background:#000}
+  #placeholder{position:absolute;text-align:center;color:var(--muted);padding:20px;pointer-events:none}
+  #placeholder b{display:block;font-size:20px;color:var(--text);margin-bottom:6px}
+  #side{display:flex;flex-direction:column;gap:10px;overflow:auto}
+  .tile{position:relative;background:var(--card);border-radius:14px;overflow:hidden;aspect-ratio:4/3;flex:none}
+  .tile video{width:100%;height:100%;object-fit:cover}
+  .tile span{position:absolute;left:8px;bottom:6px;font-size:12px;background:#000a;padding:2px 8px;border-radius:8px}
+  #local{transform:scaleX(-1)}
+  #info{background:var(--card);border-radius:14px;padding:12px;font-size:13px;color:var(--muted);line-height:1.6}
+  #info b{color:var(--text);letter-spacing:3px;font-size:18px}
+  #log{font-size:11px;color:var(--muted);max-height:90px;overflow:auto;background:#120e1b;border-radius:10px;padding:8px;white-space:pre-wrap}
+  #controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:auto}
+  #controls .wide{grid-column:span 2}
+  #conn{display:inline-block;width:9px;height:9px;border-radius:50%;background:#e0a030;margin-right:6px}
+  #conn.ok{background:var(--ok)}
+  #overlay{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+  .float{position:absolute;bottom:70px;font-size:42px;animation:rise 3.2s ease-out forwards;text-shadow:0 2px 8px #0008}
+  .float.sticker{font-size:20px;font-weight:700;background:#000b;padding:6px 14px;border-radius:20px;color:#fff;white-space:nowrap;text-shadow:none}
+  @keyframes rise{0%{transform:translateY(0) scale(.5);opacity:0}10%{opacity:1;transform:translateY(-20px) scale(1)}100%{transform:translateY(-330px) translateX(var(--dx,0px)) scale(1.2);opacity:0}}
+  #chatlog{position:absolute;left:12px;bottom:70px;display:flex;flex-direction:column;gap:4px;max-width:65%;pointer-events:none}
+  .msg{background:#000b;padding:6px 12px;border-radius:14px;font-size:14px;animation:fadeout 10s forwards;word-break:break-word}
+  .msg b{color:var(--accent)}
+  @keyframes fadeout{0%,85%{opacity:1}100%{opacity:0}}
+  #bar{position:absolute;left:0;right:0;bottom:0;display:flex;gap:6px;padding:8px 10px;background:linear-gradient(transparent,#000d);align-items:center;flex-wrap:wrap;opacity:.35;transition:.2s}
+  #stage:hover #bar,#bar:focus-within{opacity:1}
+  #bar button{padding:5px 10px;font-size:20px;background:#ffffff1f;border-radius:20px}
+  #bar button.st{font-size:12px;padding:7px 12px}
+  #msgInput{text-transform:none;letter-spacing:0;text-align:left;flex:1;min-width:140px;padding:8px 12px;font-size:14px}
+  #bar #btnSend{font-size:14px;background:var(--accent)}
+  @media(max-width:800px){#room{grid-template-columns:1fr;height:auto}#stage{aspect-ratio:16/9}#side{flex-direction:row;flex-wrap:wrap}.tile{width:48%}}
+</style>
+</head>
+<body>
+
+<div id="lobby">
+  <h1>🎬 Movie Night</h1>
+  <p>Video call + screen share. Dono saath mein movie dekho.</p>
+  <div class="stack">
+    <button id="btnCreate">Naya Room Banao</button>
+    <div class="or">— ya —</div>
+    <input id="codeInput" maxlength="6" placeholder="ROOM CODE">
+    <button class="ghost" id="btnJoin">Room Join Karo</button>
+  </div>
+  <div id="status"></div>
+</div>
+
+<div id="room">
+  <div id="stage">
+    <video id="screen" autoplay playsinline></video>
+    <div id="placeholder"><b>Abhi koi screen share nahi ho rahi</b>"🖥️ Screen Share" dabao aur movie wala tab chuno</div>
+    <div id="overlay"></div>
+    <div id="chatlog"></div>
+    <div id="bar">
+      <span id="emojis" style="display:contents"></span>
+      <input id="msgInput" maxlength="200" placeholder="Message likho... (Enter dabao)" autocomplete="off">
+      <button id="btnSend">Send</button>
+    </div>
+  </div>
+  <div id="side">
+    <div class="tile"><video id="remote" autoplay playsinline></video><span>Partner</span></div>
+    <div class="tile"><video id="local" autoplay playsinline muted></video><span>Aap</span></div>
+    <div id="info"><span id="conn"></span><span id="connText">Partner ka wait...</span><br>Room code: <b id="codeShow"></b>
+      <br><a href="#" id="copyLink" style="color:var(--accent)">Link copy karo</a></div>
+    <div id="log"></div>
+    <div id="controls">
+      <button class="wide ghost" id="btnPlay">🔊 Partner ki awaaz/video chalu karo</button>
+      <button class="ghost" id="btnMic">🎤 Mic</button>
+      <button class="ghost" id="btnCam">📷 Cam</button>
+      <button class="wide ghost" id="btnPip">🪟 Floating Camera Frame</button>
+      <button class="wide" id="btnShare">🖥️ Screen Share</button>
+      <button class="ghost" id="btnFull">⛶ Fullscreen</button>
+      <button class="ghost" id="btnLeave">Leave</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const PREFIX = 'mnight-';
+// STUN + TURN relay: alag-alag network/mobile data pe bhi connection banane ke liye
+const PEER_OPTS = { config: { iceServers: [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: ['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],
+    username: 'openrelayproject', credential: 'openrelayproject' }
+]}};
+let peer, camStream, screenStream, screenCall, remotePeerId, isHost = false, roomCode;
+
+function log(t){ const l=$('log'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; console.log(t); }
+function setStatus(t){ $('status').textContent = t; }
+
+// Dummy stream: camera na ho tab bhi call connect ho sake
+function dummyStream(){
+  const c = document.createElement('canvas'); c.width = 320; c.height = 240;
+  const g = c.getContext('2d'); g.fillStyle = '#222'; g.fillRect(0,0,320,240);
+  g.fillStyle = '#888'; g.font = '20px sans-serif'; g.fillText('Camera off', 105, 125);
+  const s = c.captureStream(5);
+  setInterval(()=>g.fillRect(0,0,1,1), 500); // frame generate karte raho
+  return s;
+}
+
+async function getCam(){
+  const tries = [
+    [{video:{width:640,height:480}, audio:{echoCancellation:true,noiseSuppression:true}}, 'Camera + mic mil gaye'],
+    [{audio:{echoCancellation:true,noiseSuppression:true}}, 'Sirf mic mila (camera nahi)'],
+    [{video:true}, 'Sirf camera mila (mic nahi)']
+  ];
+  for (const [c, msg] of tries){
+    try { const s = await navigator.mediaDevices.getUserMedia(c); log('✓ ' + msg); return s; }
+    catch(e){ log('✗ ' + (c.video?'video':'') + (c.audio?' audio':'') + ': ' + e.name); }
+  }
+  log('⚠ Camera/mic dono nahi mile. Browser ke address bar mein 🔒 pe click karke Allow karo. Agar doosra tab/app camera use kar raha hai to use band karo.');
+  return dummyStream();
+}
+
+async function start(host, code){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    return setStatus('Ye page HTTPS (ya localhost) pe kholo, file:// ya http se camera nahi chalega.');
+  }
+  roomCode = code; isHost = host;
+  setStatus('Camera shuru ho raha hai...');
+  camStream = await getCam();
+  $('local').srcObject = camStream;
+  setStatus('Connect ho rahe hain...');
+
+  peer = host ? new Peer(PREFIX + code, PEER_OPTS) : new Peer(PEER_OPTS);
+  peer.on('error', e => {
+    log('Peer error: ' + e.type);
+    if (e.type === 'unavailable-id') setStatus('Ye code already use mein hai, dobara try karo.');
+    else if (e.type === 'peer-unavailable') { setStatus('Room nahi mila. Code check karo, aur host room khula rakhe.'); }
+    else setStatus('Error: ' + e.type);
+  });
+  peer.on('disconnected', () => { log('Server se disconnect, reconnect...'); peer.reconnect(); });
+  peer.on('connection', setupData);
+  peer.on('open', () => {
+    $('lobby').style.display = 'none';
+    $('room').style.display = 'grid';
+    $('codeShow').textContent = code;
+    history.replaceState(null,'','#'+code);
+    log('Room ready. Code: ' + code);
+    if (!host) { remotePeerId = PREFIX + code; callPartner(); setupData(peer.connect(remotePeerId, {reliable:true})); }
+  });
+  peer.on('call', call => {
+    remotePeerId = call.peer;
+    if (call.metadata && call.metadata.type === 'screen') { call.answer(); handleScreenCall(call); }
+    else { call.answer(camStream); handleCamCall(call); }
+  });
+}
+
+function watchIce(call, name){
+  const pc = call.peerConnection; if (!pc) return setTimeout(()=>watchIce(call,name), 300);
+  pc.oniceconnectionstatechange = () => {
+    log(name + ' connection: ' + pc.iceConnectionState);
+    if (pc.iceConnectionState === 'failed') log('✗ Direct connection fail. Dono taraf internet check karo / VPN band karo.');
+  };
+}
+
+function callPartner(){
+  const call = peer.call(remotePeerId, camStream, {metadata:{type:'cam'}});
+  handleCamCall(call);
+}
+function handleCamCall(call){
+  watchIce(call, 'Call');
+  call.on('stream', s => {
+    $('remote').srcObject = s; remoteStream = s; connected(true);
+    if (pipWin && pipWin.document){ const pr = pipWin.document.getElementById('pr'); if (pr){ pr.srcObject = s; pr.play().catch(()=>{}); } }
+    $('remote').play().catch(()=> log('Browser ne awaaz roki — "🔊 chalu karo" button dabao.'));
+  });
+  call.on('close', () => connected(false));
+  call.on('error', e => { log('Call error: ' + e); connected(false); });
+}
+function handleScreenCall(call){
+  call.on('stream', s => {
+    $('screen').srcObject = s; $('placeholder').style.display='none';
+    $('screen').play().catch(()=> log('Movie ki awaaz ke liye "🔊 chalu karo" dabao.'));
+  });
+  call.on('close', () => { $('screen').srcObject = null; $('placeholder').style.display='block'; });
+}
+function connected(ok){
+  $('conn').className = ok ? 'ok' : '';
+  $('connText').textContent = ok ? 'Partner connected ✓' : 'Partner disconnect ho gaya';
+}
+
+function setPH(title, sub){ $('placeholder').innerHTML = '<b>' + title + '</b>' + sub; $('placeholder').style.display = 'block'; }
+
+// ===== Chat + emoji reactions + stickers =====
+const EMOJIS = ['❤️','😂','😮','👏','🔥','😭','🥰','🍿'];
+const STICKERS = ['Love you 💖','Hahaha 😂','Wow 😮','Pause karo ⏸️','Popcorn 🍿'];
+let dataConn = null;
+
+function setupData(c){
+  c.on('open', () => { dataConn = c; log('Chat ready ✓'); });
+  c.on('data', d => {
+    if (!d) return;
+    if (d.t === 'chat') addMsg('Partner', String(d.text).slice(0,200));
+    else if (d.t === 'emoji') floatEmoji(String(d.e).slice(0,30), !!d.sticker);
+  });
+  c.on('close', () => { if (dataConn === c) dataConn = null; });
+  if (c.open) dataConn = c;
+}
+function sendData(o){ if (dataConn && dataConn.open) dataConn.send(o); else log('Chat abhi connect nahi hua, thoda ruko.'); }
+function sendEmoji(e, sticker){ floatEmoji(e, sticker); sendData({t:'emoji', e, sticker: !!sticker}); }
+function sendChat(){
+  const v = $('msgInput').value.trim(); if (!v) return;
+  addMsg('Aap', v); sendData({t:'chat', text:v}); $('msgInput').value = '';
+}
+function spawn(container, text, sticker){
+  const el = container.ownerDocument.createElement('div');
+  el.className = 'float' + (sticker ? ' sticker' : '');
+  el.textContent = text;
+  el.style.left = (8 + Math.random()*60) + '%';
+  el.style.setProperty('--dx', (Math.random()*90 - 45) + 'px');
+  container.appendChild(el); setTimeout(() => el.remove(), 3400);
+}
+function floatEmoji(text, sticker){
+  spawn($('overlay'), text, sticker);
+  if (pipWin && pipWin.document){ const o = pipWin.document.getElementById('po'); if (o) spawn(o, text, sticker); }
+}
+function addMsg(who, text){
+  const el = document.createElement('div'); el.className = 'msg';
+  const b = document.createElement('b'); b.textContent = who + ': ';
+  el.append(b, document.createTextNode(text));
+  const log_ = $('chatlog'); log_.appendChild(el); setTimeout(() => el.remove(), 10000);
+  while (log_.children.length > 5) log_.firstChild.remove();
+  if (pipWin && pipWin.document){ const m = pipWin.document.getElementById('pmsg'); if (m) m.textContent = who + ': ' + text; }
+}
+(function buildBar(){
+  const box = $('emojis');
+  EMOJIS.forEach(e => { const b = document.createElement('button'); b.textContent = e; b.onclick = () => sendEmoji(e, false); box.appendChild(b); });
+  STICKERS.forEach(s => { const b = document.createElement('button'); b.textContent = s; b.className = 'st'; b.onclick = () => sendEmoji(s, true); box.appendChild(b); });
+  $('btnSend').onclick = sendChat;
+  $('msgInput').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') sendChat(); });
+})();
+
+// ===== Floating camera frame (Picture-in-Picture) =====
+let remoteStream = null, pipWin = null, pipTimer = null, pipVideo = null;
+
+async function openPip(){
+  if (pipWin){ try{ pipWin.close(); }catch(e){} return; }
+  if (pipVideo && document.pictureInPictureElement){ document.exitPictureInPicture(); return; }
+
+  if (window.documentPictureInPicture){
+    // Best: alag floating window, har tab/app ke upar. Dono camera + mic/cam buttons.
+    pipWin = await documentPictureInPicture.requestWindow({width:240, height:380});
+    const d = pipWin.document;
+    d.head.insertAdjacentHTML('beforeend', `<style>
+      *{box-sizing:border-box;margin:0}body{background:#0e0b14;color:#fff;font-family:system-ui;display:flex;flex-direction:column;height:100vh;gap:6px;padding:6px}
+      video{width:100%;flex:1;min-height:0;object-fit:cover;border-radius:10px;background:#000}
+      #pl{transform:scaleX(-1)}.bar{display:flex;gap:6px}
+      button{flex:1;border:0;border-radius:8px;padding:8px;background:#2a2238;color:#fff;font-size:15px;cursor:pointer}button.off{background:#5a2030}
+      body{position:relative}#po{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+      .float{position:absolute;bottom:60px;font-size:34px;animation:rise 3.2s ease-out forwards}
+      .float.sticker{font-size:14px;font-weight:700;background:#000c;padding:4px 10px;border-radius:14px;white-space:nowrap}
+      @keyframes rise{0%{transform:translateY(0) scale(.5);opacity:0}10%{opacity:1}100%{transform:translateY(-300px) translateX(var(--dx,0px)) scale(1.2);opacity:0}}
+      #pmsg{font-size:12px;min-height:16px;color:#ddd;text-align:center;word-break:break-word}#pe button{padding:4px;font-size:16px}
+    </style>`);
+    d.body.innerHTML = '<video id="pr" autoplay playsinline></video><video id="pl" autoplay playsinline muted></video><div id="pmsg"></div><div class="bar" id="pe"></div><div class="bar"><button id="pm">🎤</button><button id="pc">📷</button></div><div id="po"></div>';
+    const pe = d.getElementById('pe');
+    EMOJIS.slice(0,6).forEach(e => { const b = d.createElement('button'); b.textContent = e; b.onclick = () => sendEmoji(e, false); pe.appendChild(b); });
+    const pr = d.getElementById('pr'), pl = d.getElementById('pl');
+    pr.srcObject = remoteStream; pl.srcObject = camStream;
+    pr.play().catch(()=>{}); pl.play().catch(()=>{});
+    d.getElementById('pm').onclick = e => { $('btnMic').click(); e.target.classList.toggle('off', $('btnMic').classList.contains('off')); };
+    d.getElementById('pc').onclick = e => { $('btnCam').click(); e.target.classList.toggle('off', $('btnCam').classList.contains('off')); };
+    $('remote').muted = true; // awaaz ab PiP window se aayegi (double na ho)
+    $('btnPip').textContent = '🪟 Floating Frame Band Karo';
+    pipWin.addEventListener('pagehide', () => { pipWin = null; $('remote').muted = false; $('btnPip').textContent = '🪟 Floating Camera Frame'; });
+    log('Floating frame khula ✓');
+    return;
+  }
+
+  // Fallback: dono camera ek canvas pe mila ke normal Picture-in-Picture
+  const cv = document.createElement('canvas'); cv.width = 480; cv.height = 360;
+  const g = cv.getContext('2d');
+  pipTimer = setInterval(() => {
+    g.fillStyle = '#000'; g.fillRect(0,0,480,360);
+    try { g.drawImage($('remote'), 0, 0, 480, 360); } catch(e){}
+    try { g.drawImage($('local'), 340, 250, 130, 100); } catch(e){}
+  }, 66);
+  pipVideo = document.createElement('video'); pipVideo.muted = true; pipVideo.playsInline = true;
+  pipVideo.srcObject = cv.captureStream(15);
+  await pipVideo.play();
+  await pipVideo.requestPictureInPicture();
+  $('btnPip').textContent = '🪟 Floating Frame Band Karo';
+  pipVideo.addEventListener('leavepictureinpicture', () => { clearInterval(pipTimer); pipVideo = null; $('btnPip').textContent = '🪟 Floating Camera Frame'; });
+  log('Floating frame (basic PiP) khula ✓');
+}
+$('btnPip').onclick = () => openPip().catch(e => { log('PiP error: ' + e.name); alert('Floating frame nahi khul paya. Chrome/Edge latest version use karo.'); });
+
+$('btnPlay').onclick = () => {
+  ['remote','screen'].forEach(id => { const v = $(id); if (v.srcObject){ v.muted = (id==='screen' && screenStream) ? true : false; v.volume = 1; v.play().catch(e=>log(e.name)); } });
+  log('Play/unmute try kiya.');
+};
+
+// Entire-screen mode: raw screen ko canvas pe utaar ke floating frame ki jagah dark patch laga dete hain,
+// taaki partner ko wo window/chehre dikhe hi nahi. (Patch wahi jagah dhakta hai jo floating frame
+// pehle se movie ke upar dhak raha tha, to movie ka koi extra hissa nahi jaata.)
+let maskStop = null;
+async function maskPip(raw){
+  const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.srcObject = raw;
+  await v.play();
+  if (!v.videoWidth) await new Promise(r => v.addEventListener('loadedmetadata', r, {once:true}));
+  const cv = document.createElement('canvas'); cv.width = v.videoWidth; cv.height = v.videoHeight;
+  const g = cv.getContext('2d');
+  const out = cv.captureStream(30);
+  raw.getAudioTracks().forEach(t => out.addTrack(t));
+
+  const draw = () => {
+    if (v.readyState < 2) return;
+    g.drawImage(v, 0, 0, cv.width, cv.height);
+    if (pipWin && !pipWin.closed){
+      const sx = cv.width / screen.width, sy = cv.height / screen.height;
+      const ox = screen.availLeft || 0, oy = (screen.availTop > 40) ? screen.availTop : 0;
+      const pad = 8;
+      g.fillStyle = '#0e0b14';
+      g.fillRect((pipWin.screenX - ox - pad) * sx, (pipWin.screenY - oy - pad) * sy,
+                 (pipWin.outerWidth + pad*2) * sx, (pipWin.outerHeight + pad*2) * sy);
+    }
+  };
+  // Worker timer: tab background mein ho (aap movie wale tab pe ho) tab bhi throttle nahi hota
+  let worker = null, iv = null;
+  try {
+    worker = new Worker(URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),33)'], {type:'text/javascript'})));
+    worker.onmessage = draw;
+  } catch(e){ iv = setInterval(draw, 33); }
+  maskStop = () => { if (worker) worker.terminate(); if (iv) clearInterval(iv); v.srcObject = null; };
+  return out;
+}
+
+$('btnShare').onclick = async () => {
+  if (screenStream) return stopShare();
+  if (!remotePeerId) return alert('Pehle partner ka connect hona zaroori hai.');
+  if (!navigator.mediaDevices.getDisplayMedia) return alert('Screen share sirf laptop/desktop browser (Chrome/Edge) mein chalta hai.');
+  try {
+    screenStream = await navigator.mediaDevices.getDisplayMedia({
+      video:{frameRate:30}, audio:true,
+      selfBrowserSurface:'exclude',   // ye movie-night tab picker mein nahi dikhega
+      monitorTypeSurfaces:'include',  // Entire Screen wapas (floating frame ko neeche mask kar denge)
+      systemAudio:'include', surfaceSwitching:'include', preferCurrentTab:false
+    });
+  } catch(e){ return; }
+  const surf = (screenStream.getVideoTracks()[0].getSettings() || {}).displaySurface;
+  let sendStream = screenStream;
+  if (surf === 'monitor') {
+    // Entire screen: floating frame wali jagah partner ke liye dhak denge (usko dikhna nahi chahiye)
+    try { sendStream = await maskPip(screenStream); log('Entire screen: floating frame partner se chhupa rahega ✓'); }
+    catch(e){ log('Mask fail (raw screen bhej raha hoon): ' + e.message); }
+  }
+  if (!screenStream.getAudioTracks().length)
+    alert('Audio share nahi hua! Stop karke dobara share karo, "Chrome Tab" chuno aur neeche "Also share tab audio" tick karo.');
+  screenCall = peer.call(remotePeerId, sendStream, {metadata:{type:'screen'}});
+  watchIce(screenCall, 'Screen');
+  $('screen').srcObject = null; // apna preview nahi dikhate (warna aaina-loop banta hai)
+  setPH('✅ Aap screen share kar rahe ho', 'Partner ko ab aapki movie dikh rahi hai.<br>Movie wale tab pe jao aur "🪟 Floating Camera Frame" kholo.');
+  $('btnShare').textContent = '⏹ Share Band Karo'; $('btnShare').classList.add('off');
+  screenStream.getVideoTracks()[0].onended = stopShare;
+};
+function stopShare(){
+  if (maskStop){ maskStop(); maskStop = null; }
+  if (screenStream) screenStream.getTracks().forEach(t => t.stop());
+  if (screenCall) screenCall.close();
+  screenStream = screenCall = null;
+  $('screen').srcObject = null; $('screen').muted = false;
+  setPH('Abhi koi screen share nahi ho rahi', '"🖥️ Screen Share" dabao aur movie wala tab chuno');
+  $('btnShare').textContent = '🖥️ Screen Share'; $('btnShare').classList.remove('off');
+}
+
+function toggle(kind, btn, label){
+  const tracks = kind==='audio' ? camStream.getAudioTracks() : camStream.getVideoTracks();
+  if (!tracks.length) return log('Is device ka ' + kind + ' available nahi hai.');
+  const on = !tracks[0].enabled; tracks.forEach(t => t.enabled = on);
+  btn.classList.toggle('off', !on); btn.textContent = (on?'':'🚫 ') + label;
+}
+$('btnMic').onclick = () => toggle('audio', $('btnMic'), '🎤 Mic');
+$('btnCam').onclick = () => toggle('video', $('btnCam'), '📷 Cam');
+$('btnFull').onclick = () => $('stage').requestFullscreen && $('stage').requestFullscreen();
+$('btnLeave').onclick = () => { stopShare(); if (camStream) camStream.getTracks().forEach(t=>t.stop()); if (peer) peer.destroy(); location.hash=''; location.reload(); };
+$('copyLink').onclick = e => { e.preventDefault(); navigator.clipboard.writeText(location.origin+location.pathname+'#'+roomCode); e.target.textContent='Copy ho gaya ✓'; };
+
+$('btnCreate').onclick = () => start(true, genCode());
+function genCode(){ const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; return Array.from({length:6},()=>c[Math.floor(Math.random()*c.length)]).join(''); }
+$('btnJoin').onclick = () => {
+  const c = $('codeInput').value.trim().toUpperCase();
+  if (c.length < 4) return setStatus('Room code daalo.');
+  start(false, c);
+};
+if (location.hash.length > 3) $('codeInput').value = location.hash.slice(1).toUpperCase();
+</script>
+</body>
+</html>
